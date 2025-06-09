@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Tetris</title>
+  <meta charset="UTF-8">
+  <style>
+    /* Full screen black background tapos center yung canvas */
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: black;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* White border para sa game area */
+    canvas {
+      border: 1px solid white;
+    }
+
+    /* Style para sa instructions ng controls */
+    #instructions {
+      font-family: monospace;
+      font-size: 14px;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border: 1px solid white;
+      border-radius: 4px;
+      width: fit-content;
+      margin: 10px;
+    }
+    #instructions h3 {
+      text-align: center;
+      padding: 0;
+      margin: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas width="150" height="300" id="game"></canvas>
+
+  <script>
+    // --- Utility Functions ---
+
+    function getRandom(min, max) {
+      return Math.floor(Math.random() * (Math.floor(max) - Math.ceil(min) + 1)) + Math.ceil(min);
+    }
+
+    function generatePieceQueue() {
+      const pieces = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
+      while (pieces.length) {
+        const index = getRandom(0, pieces.length - 1);
+        upcomingPieces.push(pieces.splice(index, 1)[0]);
+      }
+    }
+
+    function getNextPiece() {
+      if (upcomingPieces.length === 0) generatePieceQueue();
+      const type = upcomingPieces.pop();
+      const shape = tetrominoShapes[type];
+      const col = playfield[0].length / 2 - Math.ceil(shape[0].length / 2);
+      const row = type === 'I' ? -1 : -2; // Adjust depende sa piece
+      return { type, shape, row, col };
+    }
+
+    function rotateMatrix(matrix) {
+      const size = matrix.length - 1;
+      return matrix.map((row, i) => row.map((_, j) => matrix[size - j][i]));
+    }
+
+    function isValidMove(shape, testRow, testCol) {
+      for (let r = 0; r < shape.length; r++) {
+        for (let c = 0; c < shape[r].length; c++) {
+          if (shape[r][c]) {
+            const y = testRow + r;
+            const x = testCol + c;
+            if (x < 0 || x >= playfield[0].length || y >= playfield.length || playfield[y][x]) {
+              return false;
+            }
+          }
+        }
+      }
+      return true;
+    }
+
+    function placePiece() {
+      // Place blocks sa playfield
+      for (let r = 0; r < currentPiece.shape.length; r++) {
+        for (let c = 0; c < currentPiece.shape[r].length; c++) {
+          if (currentPiece.shape[r][c]) {
+            const y = currentPiece.row + r;
+            const x = currentPiece.col + c;
+            if (y < 0) return endGame();
+            playfield[y][x] = currentPiece.type;
+          }
+        }
+      }
+
+      // Tanggalin yung mga full rows
+      for (let row = playfield.length - 1; row >= 0;) {
+        if (playfield[row].every(cell => !!cell)) {
+          for (let r = row; r >= 0; r--) {
+            for (let c = 0; c < playfield[r].length; c++) {
+              playfield[r][c] = playfield[r - 1]?.[c] || 0;
+            }
+          }
+        } else {
+          row--;
+        }
+      }
+
+      currentPiece = getNextPiece();
+    }
+
+    function endGame() {
+      cancelAnimationFrame(animationId);
+      isGameOver = true;
+      // Game Over display
+      context.fillStyle = 'black';
+      context.globalAlpha = 0.9;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.globalAlpha = 1;
+      context.fillStyle = 'red';
+      context.font = '20px monospace';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText('GAME OVER', canvas.width / 2, canvas.height / 2);
+    }
+
+    // --- Initial Setup ---
+
+    const canvas = document.getElementById('game');
+    const context = canvas.getContext('2d');
+    const blockSize = 15;
+    const upcomingPieces = [];
+    const playfield = [];
+
+    for (let r = -2; r < 20; r++) {
+      playfield[r] = [];
+      for (let c = 0; c < 10; c++) {
+        playfield[r][c] = 0;
+      }
+    }
+
+    // --- Para sa shapes nila ---
+
+    const tetrominoShapes = {
+      'I': [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
+      'J': [[1, 0, 0], [1, 1, 1], [0, 0, 0]],
+      'L': [[0, 0, 1], [1, 1, 1], [0, 0, 0]],
+      'O': [[1, 1], [1, 1]],
+      'S': [[0, 1, 1], [1, 1, 0], [0, 0, 0]],
+      'Z': [[1, 1, 0], [0, 1, 1], [0, 0, 0]],
+      'T': [[0, 1, 0], [1, 1, 1], [0, 0, 0]]
+    };
+
+    // --- Para sa color ng piece ---
+
+    const tetrominoColors = {
+      'I': '#ffffff', 'O': '#ffffff', 'T': '#ffffff',
+      'S': '#ffffff', 'Z': '#ffffff', 'J': '#ffffff', 'L': '#ffffff'
+    };
+
+    let dropCounter = 0;
+    let currentPiece = getNextPiece();
+    let animationId = null;
+    let isGameOver = false;
+
+    // --- Game Loop ---
+
+    function updateGame() {
+      animationId = requestAnimationFrame(updateGame);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+
+      // para idraw lahat ng blocks sa playfield
+      for (let r = 0; r < 20; r++) {
+        for (let c = 0; c < 10; c++) {
+          if (playfield[r][c]) {
+            context.fillStyle = tetrominoColors[playfield[r][c]];
+            context.fillRect(c * blockSize, r * blockSize, blockSize - 1, blockSize - 1);
+          }
+        }
+      }
+
+      // para sa current piece
+      if (currentPiece) {
+        if (++dropCounter > 35) {
+          currentPiece.row++;
+          dropCounter = 0;
+          if (!isValidMove(currentPiece.shape, currentPiece.row, currentPiece.col)) {
+            currentPiece.row--;
+            placePiece();
+          }
+        }
+
+        context.fillStyle = tetrominoColors[currentPiece.type];
+        for (let r = 0; r < currentPiece.shape.length; r++) {
+          for (let c = 0; c < currentPiece.shape[r].length; c++) {
+            if (currentPiece.shape[r][c]) {
+              context.fillRect(
+                (currentPiece.col + c) * blockSize,
+                (currentPiece.row + r) * blockSize,
+                blockSize - 1,
+                blockSize - 1
+              );
+            }
+          }
+        }
+      }
+    }
+
+    function restartGame() {
+      // Reset lahat para magstart ulit
+      for (let r = -2; r < 20; r++) {
+        playfield[r] = [];
+        for (let c = 0; c < 10; c++) {
+          playfield[r][c] = 0;
+        }
+      }
+
+      upcomingPieces.length = 0;
+      currentPiece = getNextPiece();
+      dropCounter = 0;
+      isGameOver = false;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      cancelAnimationFrame(animationId);
+      animationId = requestAnimationFrame(updateGame);
+    }
+
+    // --- Controls sa Keyboard ---
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'r' || e.key === 'R') {
+        restartGame();
+        return;
+      }
+      if (isGameOver) return;
+
+      if (e.which === 37 || e.which === 39) {
+        const testCol = e.which === 37 ? currentPiece.col - 1 : currentPiece.col + 1;
+        if (isValidMove(currentPiece.shape, currentPiece.row, testCol)) {
+          currentPiece.col = testCol;
+        }
+      }
+
+      if (e.which === 38) {
+        const rotated = rotateMatrix(currentPiece.shape);
+        if (isValidMove(rotated, currentPiece.row, currentPiece.col)) {
+          currentPiece.shape = rotated;
+        }
+      }
+
+      if (e.which === 40) {
+        const nextRow = currentPiece.row + 1;
+        if (!isValidMove(currentPiece.shape, nextRow, currentPiece.col)) {
+          currentPiece.row = nextRow - 1;
+          placePiece();
+        } else {
+          currentPiece.row = nextRow;
+        }
+      }
+    });
+
+    // --- Start Game ---
+
+    updateGame();
+  </script>
+
+  <div id="instructions">
+    <h3>CONTROLS</h3><br>
+    ↑ = Rotate Piece<br>
+    ↓ = Fast Drop<br>
+    ← = Move Left<br>
+    → = Move Right<br>
+    R = Restart Game
+  </div>
+</body>
+
+</html>
